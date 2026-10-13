@@ -9,6 +9,13 @@ import { parsePesosToCents, centsToPesosAmount } from './money.js'
  * @returns {{ valid: boolean, message?: string, paymentCents?: number, changeCents?: number }}
  */
 export function validatePayment(cashInput, totalCents) {
+  if (!Number.isSafeInteger(totalCents) || totalCents < 0) {
+    return {
+      valid: false,
+      message: 'Invalid order total.'
+    }
+  }
+
   const paymentCents = parsePesosToCents(cashInput)
 
   if (paymentCents === null) {

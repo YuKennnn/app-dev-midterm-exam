@@ -14,15 +14,19 @@ export const usePosStore = defineStore('pos', () => {
 
   // Getters / Computed
   const cartWithSubtotals = computed(() =>
-    cart.value.map(item => ({
-      ...item,
-      subtotalCents: item.unitPriceCents * item.quantity
-    }))
+    cart.value.map(item => {
+      const subtotal = item.unitPriceCents * item.quantity
+      return {
+        ...item,
+        subtotalCents: Number.isSafeInteger(subtotal) && subtotal >= 0 ? subtotal : 0
+      }
+    })
   )
 
-  const totalCents = computed(() =>
-    cart.value.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0)
-  )
+  const totalCents = computed(() => {
+    const total = cart.value.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0)
+    return Number.isSafeInteger(total) && total >= 0 ? total : 0
+  })
 
   const itemCount = computed(() =>
     cart.value.reduce((sum, item) => sum + item.quantity, 0)

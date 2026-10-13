@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setActivePinia, createPinia } from 'pinia'
+import { setActivePinia, createPinia, storeToRefs } from 'pinia'
 import { PRODUCTS, PRODUCT_MAP } from '../src/data/products.js'
 import { centsToPesos, centsToPesosAmount, parsePesosToCents } from '../src/utils/money.js'
 import { validatePayment } from '../src/utils/validation.js'
@@ -190,6 +190,12 @@ describe('4. Pinia POS Store Operations & Transaction Lifecycle', () => {
     assert.match(store.receipt.reference, /^TXN-\d{8}-[A-F0-9]{4}$/)
   })
 
+  test('rejects out-of-range or non-safe-integer order totals', () => {
+    assert.deepEqual(validatePayment('200.00', Infinity), { valid: false, message: 'Invalid order total.' })
+    assert.deepEqual(validatePayment('200.00', -100), { valid: false, message: 'Invalid order total.' })
+    assert.deepEqual(validatePayment('200.00', 165.5), { valid: false, message: 'Invalid order total.' })
+  })
+
   test('guards against duplicate confirmation and preserves receipt immutability', () => {
     const store = usePosStore()
     store.addItem('rice-plain')
@@ -199,34 +205,51 @@ describe('4. Pinia POS Store Operations & Transaction Lifecycle', () => {
     const initialRef = store.receipt.reference
     const initialItems = [...store.receipt.items]
 
+    // Verify snapshot objects are frozen
+    assert.ok(Object.isFrozen(store.receipt))
+    assert.ok(Object.isFrozen(store.receipt.items[0]))
+
     // Attempt second confirm
     store.confirmPayment()
     assert.equal(store.receipt.reference, initialRef)
 
-    // Attempt modifying cart after completion - must be blocked
+    // Attempt modifying cart via action after completion - must be blocked
     store.addItem('chicken-1pc')
     assert.equal(store.cart.length, 1) // Does not add chicken
     assert.equal(store.receipt.items.length, initialItems.length)
+
+    // Direct mutation of cart item does not alter receipt snapshot item
+    store.cart[0].quantity = 99
+    assert.equal(store.receipt.items[0].quantity, 1)
   })
 
-  test('starts new transaction and completely resets all state', () => {
+  test('starts new transaction, resets all state, and preserves storeToRefs reactivity', () => {
     const store = usePosStore()
+    const { cart, itemCount, totalCents, isCompleted, receipt } = storeToRefs(store)
+
     store.addItem('rice-plain')
     store.setCashInput('20')
     store.confirmPayment()
 
-    assert.equal(store.isCompleted, true)
-    assert.ok(store.receipt)
+    assert.equal(isCompleted.value, true)
+    assert.ok(receipt.value)
 
     // Start new transaction
     store.startNewTransaction()
 
-    assert.equal(store.cart.length, 0)
+    assert.equal(cart.value.length, 0)
     assert.equal(store.cashInput, '')
     assert.equal(store.validationError, '')
-    assert.equal(store.isCompleted, false)
-    assert.equal(store.receipt, null)
-    assert.equal(store.totalCents, 0)
+    assert.equal(isCompleted.value, false)
+    assert.equal(receipt.value, null)
+    assert.equal(totalCents.value, 0)
+    assert.equal(itemCount.value, 0)
     assert.equal(store.isCartEmpty, true)
+
+    // Confirm reactivity is fully preserved for the next transaction
+    store.addItem('chicken-1pc')
+    assert.equal(cart.value.length, 1)
+    assert.equal(itemCount.value, 1)
+    assert.equal(totalCents.value, 6500)
   })
 })
